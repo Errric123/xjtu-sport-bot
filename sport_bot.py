@@ -454,6 +454,7 @@ def send_email(content: str) -> bool:
         with smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30) as smtp:
             smtp.login(Config.EMAIL_SENDER, Config.SMTP_AUTH_CODE)
             smtp.sendmail(Config.EMAIL_SENDER, [Config.EMAIL_RECEIVER], msg.as_string())
+            smtp.close()
 
         logging.info("邮件发送成功")
         return True
@@ -577,3 +578,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
