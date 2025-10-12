@@ -9,6 +9,13 @@
 ## 版本说明
 
 <details>
+<summary><strong>v3.0 (2025-10-12)</strong></summary>
+
+- 增加mfa认证过程，修复了获取访问令牌失败的问题（感谢[@takagi18065](https://github.com/takagi18065)
+）。
+</details>
+
+<details>
 <summary><strong>v2.0 (2025-07-20)</strong></summary>
 
 - **接口更新**：修复了由于学校体育打卡系统接口变更导致的登录失败问题。
