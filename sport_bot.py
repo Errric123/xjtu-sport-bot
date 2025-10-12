@@ -80,6 +80,7 @@ class Config:
     # API端点
     OPEN_OAUTH = "https://org.xjtu.edu.cn/openplatform/oauth/authorize"
     CAS_PUBKEY = "https://login.xjtu.edu.cn/cas/jwt/publicKey"
+    MFA_DETECT = "https://login.xjtu.edu.cn/cas/mfa/detect"  # new MFA api
     CODE_LOGIN = "https://ipahw.xjtu.edu.cn/szjy-boot/sso/codeLogin"
 
     # 签到签退API端点
@@ -177,6 +178,87 @@ def extract_form_inputs(html: str, form_selector: str = "form#fm1") -> dict:
         logging.error(f"表单字段提取失败: {str(e)}")
         raise
 
+def mfa_detect(session: requests.Session, username: str, encrypted_password: str,
+               fp_visitor_id: str, cas_login_url: str) -> dict:
+    """
+    调用MFA检测接口
+    
+    Args:
+        session: requests会话对象
+        username: 用户名
+        encrypted_password: RSA加密后的密码
+        fp_visitor_id: 浏览器指纹ID
+        cas_login_url: CAS登录URL（用于Referer）
+    
+    Returns:
+        dict: MFA检测响应数据，包含mfaState等信息
+    """
+    logging.info("执行MFA检测")
+    
+    mfa_data = {
+        "username": username,
+        "password": encrypted_password,
+        "fpVisitorId": fp_visitor_id,
+    }
+    
+    try:
+        response = session.post(
+            Config.MFA_DETECT,
+            data=mfa_data,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": "https://login.xjtu.edu.cn",
+                "Referer": cas_login_url,
+                "sec-fetch-site": "same-origin",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-dest": "empty",
+            },
+            timeout=10,
+        )
+        
+        logging.debug(f"MFA检测响应状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            try:
+                mfa_result = response.json()
+                logging.debug(f"MFA响应数据: {json.dumps(mfa_result, ensure_ascii=False)}")
+                
+                if mfa_result.get("code") == 0:
+                    data = mfa_result.get("data", {})
+                    mfa_state = data.get("state", "")
+                    need_mfa = data.get("need", False)
+                    
+                    logging.info(f"MFA检测成功 - mfaState: {mfa_state}")
+                    logging.info(f"需要MFA: {need_mfa}, MFA已启用: {data.get('mfaEnabled', False)}")
+                    
+                    if need_mfa:
+                        logging.warning("⚠ 此账号需要多因素认证(MFA)")
+                        logging.warning("⚠ 当前脚本不支持交互式MFA，请在浏览器中完成认证或联系管理员")
+                    
+                    return mfa_result
+                else:
+                    logging.error(f"MFA检测失败: code={mfa_result.get('code')}")
+                    return None
+                    
+            except json.JSONDecodeError as e:
+                logging.error(f"MFA响应JSON解析失败: {e}")
+                logging.debug(f"响应内容: {response.text[:500]}")
+                return None
+        else:
+            logging.error(f"MFA检测请求失败: {response.status_code}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        logging.error("MFA检测请求超时")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"MFA检测网络请求异常: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"MFA检测异常: {e}")
+        return None
 
 def get_token(user, password):
     """
@@ -233,6 +315,23 @@ def get_token(user, password):
                 # "rememberMe": "on",
             }
         )
+
+        # Step 4.5: MFA Detection (新增)
+        fp_visitor_id = form_data.get("fpVisitorId", "")
+        encrypted_password = form_data["password"]
+
+        mfa_result = mfa_detect(sess, user, encrypted_password, fp_visitor_id, cas_login)
+
+        if mfa_result and mfa_result.get("code") == 0:
+            data = mfa_result.get("data", {})
+            mfa_state = data.get("state", "")
+            
+            # 更新表单中的mfaState
+            if mfa_state:
+                form_data["mfaState"] = mfa_state
+                logging.info(f"已更新mfaState到登录表单")
+        else:
+            logging.warning("MFA检测失败，将使用默认mfaState继续登录")
 
         # Step 5: POST login data
         r_post = sess.post(
