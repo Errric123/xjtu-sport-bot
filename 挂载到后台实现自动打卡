@@ -1,0 +1,77 @@
+#在powerShell中运行守护脚本可实现每天某时间段内的打卡
+#>>>python daemon.py
+
+import schedule
+import time
+import subprocess
+import sys
+import random
+from datetime import datetime, timedelta
+
+
+def run_script():
+    try:
+        print(f"{get_current_time()} - 执行运动打卡脚本")
+        subprocess.Popen([sys.executable, "sport_bot.py"])
+
+        # 重新安排下一次执行时间（带随机波动）
+        reschedule_with_randomness()
+    except Exception as e:
+        print(f"{get_current_time()} - Error running script: {e}")
+
+
+def get_current_time():
+    """获取当前时间字符串"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def reschedule_with_randomness():
+    """重新安排下一次执行时间，添加随机波动"""
+    # 清除所有现有任务
+    schedule.clear()
+
+    
+    base_time = "09:00"
+
+    # 添加随机波动（±30分钟）
+    random_offset = random.randint(-30, 30)  # 随机偏移-30到+30分钟
+    target_time = (datetime.strptime(base_time, "%H:%M") +
+                   timedelta(minutes=random_offset)).strftime("%H:%M")
+
+    print(f"{get_current_time()} - 下一次执行时间: {target_time} (基础时间: {base_time}, 随机偏移: {random_offset}分钟)")
+
+    # 安排下一次执行
+    schedule.every().day.at(target_time).do(run_script)
+
+
+def main():
+    print(f"{get_current_time()} - 脚本守护程序启动")
+
+    # 初始安排第一次执行
+    reschedule_with_randomness()
+
+    print(f"{get_current_time()} - 守护程序运行中...")
+
+    while True:
+        try:
+            schedule.run_pending()
+            time.sleep(31)  # 每分钟检查一次
+
+            # 每小时打印一次状态（整点时）
+            if datetime.now().minute == 0:
+                # 获取当前安排的下次执行时间
+                jobs = schedule.get_jobs()
+                if jobs:
+                    next_time = jobs[0].next_run.strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"{get_current_time()} - 守护程序运行正常，下次执行: {next_time}")
+
+        except KeyboardInterrupt:
+            print(f"{get_current_time()} - 用户中断程序")
+            break
+        except Exception as e:
+            print(f"{get_current_time()} - 守护程序错误: {e}")
+            time.sleep(31)  # 出错后等待1分钟再继续
+
+
+if __name__ == "__main__":
+    main()
